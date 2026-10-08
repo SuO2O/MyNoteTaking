@@ -21,7 +21,10 @@ app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(note_bp, url_prefix='/api')
 # configure database to use repository-root `database/app.db`
 ROOT_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-DB_PATH = os.path.join(ROOT_DIR, 'database', 'app.db')
+if os.environ.get('VERCEL'):
+    DB_PATH = os.path.join('/tmp', 'app.db')
+else:
+    DB_PATH = os.path.join(ROOT_DIR, 'database', 'app.db')
 # ensure database directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
