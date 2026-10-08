@@ -1,7 +1,66 @@
+import json
+import os
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
 from flask import Blueprint, jsonify, request
 from src.models.note import Note, db
 
 note_bp = Blueprint('note', __name__)
+
+@note_bp.route('/translate', methods=['POST'])
+def translate_text():
+    data = request.get_json(silent=True)
+    text = data.get('text') if isinstance(data, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({'error': 'Text is required'}), 400
+    text = text.strip()
+
+    api_key = os.environ.get('GENAI_API_KEY')
+    if not api_key:
+        return jsonify({
+            'error': 'Set GENAI_API_KEY in the app environment and restart the app to enable translation',
+        }), 503
+
+    payload = {
+        'model': 'DeepSeek-V4-Flash',
+        'stream': False,
+        'messages': [
+            {
+                'role': 'system',
+                'content': (
+                    'Detect whether the input is English or Chinese. Translate English into '
+                    'Traditional Chinese (Hong Kong usage), or Chinese into English. Preserve '
+                    'the original meaning, line breaks, and formatting. Return only the translation.'
+                ),
+            },
+            {'role': 'user', 'content': text},
+        ],
+    }
+    provider_request = Request(
+        'https://genai.comp.polyu.edu.hk/api/v1/chat/completions',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        },
+        method='POST',
+    )
+
+    try:
+        with urlopen(provider_request, timeout=60) as response:
+            result = json.loads(response.read().decode('utf-8'))
+        translated_text = result['choices'][0]['message']['content']
+        if not isinstance(translated_text, str) or not translated_text.strip():
+            raise ValueError('The translation service returned empty text')
+        translated_text = translated_text.strip()
+        return jsonify({'translation': translated_text})
+    except HTTPError as error:
+        return jsonify({'error': f'Translation service returned HTTP {error.code}'}), 502
+    except (URLError, TimeoutError):
+        return jsonify({'error': 'Could not connect to the translation service'}), 502
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return jsonify({'error': 'The translation service returned an invalid response'}), 502
 
 @note_bp.route('/notes', methods=['GET'])
 def get_notes():
