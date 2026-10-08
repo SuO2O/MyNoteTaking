@@ -7,6 +7,12 @@ from flask import Blueprint, jsonify, request
 from src.models.note import Note, db
 
 note_bp = Blueprint('note', __name__)
+TARGET_LANGUAGES = {
+    'en': 'English',
+    'zh-Hant-HK': 'Traditional Chinese (Hong Kong)',
+    'fr': 'French',
+    'ru': 'Russian',
+}
 
 @note_bp.route('/translate', methods=['POST'])
 def translate_text():
@@ -16,29 +22,34 @@ def translate_text():
         return jsonify({'error': 'Text is required'}), 400
     text = text.strip()
 
-    api_key = os.environ.get('GENAI_API_KEY')
+    language_code = data.get('target_language') if isinstance(data, dict) else None
+    target_language = TARGET_LANGUAGES.get(language_code)
+    if not target_language:
+        return jsonify({'error': 'Choose a supported target language'}), 400
+
+    api_key = os.environ.get('OPENROUTER_API_KEY')
     if not api_key:
         return jsonify({
-            'error': 'Set GENAI_API_KEY in the app environment and restart the app to enable translation',
+            'error': 'Set OPENROUTER_API_KEY in the app environment and restart the app to enable translation',
         }), 503
 
     payload = {
-        'model': 'DeepSeek-V4-Flash',
+        'model': 'nvidia/nemotron-3.5-lightning:free',
         'stream': False,
+        'reasoning': {'enabled': True},
         'messages': [
             {
                 'role': 'system',
                 'content': (
-                    'Detect whether the input is English or Chinese. Translate English into '
-                    'Traditional Chinese (Hong Kong usage), or Chinese into English. Preserve '
-                    'the original meaning, line breaks, and formatting. Return only the translation.'
+                    f'Translate the input into {target_language}. Preserve the original meaning, '
+                    'tone, line breaks, and formatting. Return only the translated text.'
                 ),
             },
             {'role': 'user', 'content': text},
         ],
     }
     provider_request = Request(
-        'https://genai.comp.polyu.edu.hk/api/v1/chat/completions',
+        'https://openrouter.ai/api/v1/chat/completions',
         data=json.dumps(payload).encode('utf-8'),
         headers={
             'Authorization': f'Bearer {api_key}',
